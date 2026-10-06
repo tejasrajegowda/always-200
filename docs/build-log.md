@@ -144,3 +144,31 @@ builder must exist first. Pure code, no Docker.
 - **Time.** Only alert timestamps and `tick(now)` move the clock; the wall clock is never read
   (D5).
 - **Check.** `make test` (or `uv run pytest -q`): 145 tests pass, without Docker.
+
+## Step 10: the scorer, statistics and report
+
+Pure code, no Docker. One scorer grades every detector, exactly as the scoring spec says.
+
+- **Intervals.** `always_200/bench/stats.py`: `wilson(k, n)` (95% Wilson interval for a share;
+  None when n = 0), `poisson_rate_ci(count, hours)` (exact Garwood 95% interval for false alarms
+  per clean hour; a lower bound of 0 for a count of 0), and `bootstrap_median_ci(values)` (seeded
+  percentile bootstrap, 2,000 resamples, for the median latency; None for no values). Adds the
+  `numpy` and `scipy` dependencies.
+- **Pipeline.** `always_200/pipeline.py`: `run_detector(samples, detector, builder,
+  scored_start)` feeds every sample to the detector, but ticks and anomalies reach the incident
+  builder only at or after `scored_start` (ruling P1b).
+- **Trivial detectors.** `always_200/detect/trivial.py`: `AlwaysDetector` (every latency and error
+  sample is an anomaly) and `NeverDetector`, the scorer's first check (r2 §4).
+- **Scorer.** `always_200/bench/score.py`: `score_session(incidents, key, graph)` classifies every
+  fault incident once, in open-time order (ruling P3): unscored, false alarm (plus "in an event",
+  P4), detection, duplicate, recovery tail, wrong signal; a miss inside an incident that opened
+  before the fault is also counted as swallowed. Monitoring-gap incidents are never scored here.
+  Clean hours = scored span minus the union of `[start, end + grace]` windows clipped to it.
+  `SessionScore.downstream_any` holds the comparison culprit (most downstream alerting service over
+  the whole incident). `summarise(scores)` pools sessions into a `Summary` with all intervals,
+  by size and by type.
+- **Report.** `always_200/bench/report.py`: `render_table` prints the culprit rule, the main row,
+  the comparison row, detection by size and by type, with `n/a` for empty denominators and no
+  "chance" line; `to_json` gives the same numbers rounded to 4 dp for CI comparison. The
+  detection ceiling, the sweep and the PromQL notes are added with those detectors (steps 16-19).
+- **Check.** `make test` (or `uv run pytest -q`): 185 tests pass, without Docker.

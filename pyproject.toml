@@ -8,8 +8,10 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.142.2",
     "httpx>=0.28.1",
+    "numpy>=2.5.3",
     "prometheus-client>=0.26.0",
     "pyyaml>=6.0.3",
+    "scipy>=1.18.1",
     "uvicorn>=0.54.0",
 ]
 
