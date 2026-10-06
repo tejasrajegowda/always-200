@@ -96,3 +96,30 @@ and needs neither.
 - **Consistency.** A test checks that the schedule's fault types and sizes are exactly the
   patient's sick-switch menu.
 - **Check.** `make test` (or `uv run pytest -q`): 76 tests pass, without Docker.
+
+## Step 8: the seam, the answer key and ReplaySource
+
+Steps 4, 5, 7a and 7b need Docker or long unattended runs and are deferred; this step is pure
+code and needs none of them.
+
+- **Core types.** `always_200/core.py` defines `Sample`, `Anomaly`, the `Source` and `Detector`
+  protocols, and the fixed orders `SERVICES` and `SIGNALS` (ruling P7). A `Sample` refuses any
+  signal other than the four detector signals (so the answer-key gauges can never reach a
+  detector, D11), an unknown service, and a non-finite value. An `Anomaly` refuses an unknown
+  kind. `sample_order` is the stream's sort key. See [ADR 0003](decisions/0003-the-seam.md).
+- **Assembly.** `always_200/sources/assemble.py` turns per-step query results
+  (signal → service → timestamp → value, `up` included) into samples, step by step in P7 order.
+  `up == 0` or a missing scrape gives only `telemetry_missing = 1`; `up == 1` with no request
+  rate (an idle counter) gives only `telemetry_missing = 0` and skips the step (ruling P2); NaN
+  values are skipped; a real 0 is kept.
+- **Files.** `always_200/bench/files.py` reads and writes JSON Lines, gzipped when the name ends in
+  `.gz`, with a zero gzip timestamp so equal content gives equal bytes. NaN is refused on write.
+  The module docstring documents `samples.jsonl.gz`, `answer_key.jsonl` and `deploy_markers.jsonl`.
+- **Replay.** `always_200/sources/replay.py`: `ReplaySource(path).samples()` streams a recorded
+  file and raises `ValueError` on a sample out of order or a duplicate.
+- **Answer key.** `always_200/bench/answer_key.py`: `on_intervals` (first 1 to first later 0,
+  unclosed runs end at the last point), `latest_run` (ruling P12), `derive` (faults numbered
+  `<seed>-fNN` by start time; `scored_start`, `soak_end` and `scored_end` from `session_phase`,
+  refused if the session never finished), `scrape_gaps` (holes over 30 s, Review Focus 1), and
+  `write_key` / `read_key`.
+- **Check.** `make test` (or `uv run pytest -q`): 126 tests pass, without Docker.
