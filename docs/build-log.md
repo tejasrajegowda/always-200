@@ -205,3 +205,35 @@ The code and its tests, against a fake Prometheus (`httpx.MockTransport`); no Do
 - **Check.** `make test` (or `uv run pytest -q`): 220 tests pass, without Docker. An offline
   version of the quick-recording check exports a fake 3-fault session and benches it: `never`
   scores 0% with no false alarm, `always` scores 0% with 3 swallowed and 1 false alarm.
+
+## Step 14: the normal band detector
+
+Pure code, no Docker. Step 13 (the CI fixture cut from session A1) is deferred until A1 is
+recorded, so the fixture's `band` row is added then.
+
+- **Fire and clear.** `always_200/detect/firing.py`: `FireClear(n_fire=3, n_clear=4)`, shared by
+  every detector. `step(out)` returns `(emit, first)`: it fires after 3 consecutive out steps
+  (`first=True` on that step only), emits on every out step while alerting, and clears after 4
+  consecutive in steps; any out step restarts the countdown. The countdown steps emit nothing but
+  `alerting` stays True until the clear (ruling P1).
+- **Band.** `always_200/detect/band.py`: `BandConfig` (defaults equal `config/default.yaml`;
+  `from_config` reads the `band` section plus the timing N's and refuses unknown keys) and
+  `BandDetector`. Per service and signal: `request_rate` only feeds the request gate (requests in
+  the last minute = rate x 60); `latency_p95` and `error_ratio` are skipped below 30 requests per
+  minute, learned silently until the 20-value window is full, then judged against
+  `median + k x max(1.4826 x MAD, floor)` with `>=` (ruling P10) and a minimum distance above the
+  median (20 ms, 1 pp). The floor is `max(0.10 x median, 5 ms)` for latency and 0.005 for errors.
+  A value is learned only when it is in band and the series is not alerting, so the baseline is
+  frozen through an alert and its countdown. `telemetry_missing >= 1` goes through its own
+  `FireClear` per service and comes out as `kind="monitoring_gap"` (ruling P2). Only sample
+  timestamps are read (D5).
+- **Synthetic soak fixture.** `tests/fixtures/soak_synthetic/`: `make_soak.py` builds a seeded,
+  fault-free 70-minute session (10 min warm-up, 60 min soak) with the day-curve load, latency that
+  rises with load, log-normal noise, one-step blips and rare random errors, and writes
+  `samples.jsonl` and `answer_key.jsonl`. A test rebuilds it and compares bytes. The band raises
+  no incident on it (at every point of the P10 grid, checked by hand; the default point is under
+  test), and the same soak with +100% latency on orders for 3 minutes at midday opens one
+  incident within 45 s with orders as the culprit.
+- **CLI.** `python -m always_200 bench --detectors band` now runs the band from the default
+  config.
+- **Check.** `make test` (or `uv run pytest -q`): 264 tests pass, without Docker.

@@ -15,6 +15,7 @@ from always_200.bench.report import render_table
 from always_200.bench.score import score_session, summarise
 from always_200.config import graph_from, load_config
 from always_200.core import Detector
+from always_200.detect.band import BandConfig, BandDetector
 from always_200.detect.trivial import AlwaysDetector, NeverDetector
 from always_200.incidents import IncidentBuilder
 from always_200.pipeline import run_detector
@@ -23,6 +24,7 @@ from always_200.sources.replay import ReplaySource
 DETECTORS: dict[str, Callable[[], Detector]] = {
     "never": NeverDetector,
     "always": AlwaysDetector,
+    "band": lambda: BandDetector(BandConfig.from_config(load_config())),
 }
 SAMPLES = "samples.jsonl.gz"
 
