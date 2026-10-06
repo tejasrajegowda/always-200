@@ -26,5 +26,9 @@ band:
   error_floor: 0.005
   error_min_delta: 0.01
   min_requests_1m: 30
+threshold:        # ruling P5; the request gate and the N's are the band's and timing's
+  factor: 1.5     # a placeholder until step 18 freezes the tuned one
+  latency_min_delta_s: 0.020
+  error_min_delta: 0.01
 selection:
   max_fa_per_clean_hour: 0.5

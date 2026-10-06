@@ -237,3 +237,32 @@ recorded, so the fixture's `band` row is added then.
 - **CLI.** `python -m always_200 bench --detectors band` now runs the band from the default
   config.
 - **Check.** `make test` (or `uv run pytest -q`): 264 tests pass, without Docker.
+
+## Step 16: the fixed-threshold baseline and the tuning machinery
+
+Pure code, no Docker. Session A1 is not recorded yet, so `make tune` has not run on it; the
+machinery is tested on synthetic sessions. Step 13's fixture (and its `threshold` row) is still
+deferred.
+
+- **Threshold.** `always_200/detect/threshold.py`: `night_half(soak)` keeps every sample of the
+  soak steps where storefront's request rate is at or below its soak median (ruling P5; a soak with
+  no storefront rate is kept whole). `fit_thresholds(soak, factor, ...)` takes the p99 of the
+  gated `latency_p95` and `error_ratio` values of that half, per service, and returns
+  `max(factor x p99, p99 + min_delta)` (20 ms, 1 pp); `request_rate` never gets a threshold, and a
+  series with no gated value gets none. `ThresholdDetector` uses the band's request gate, the
+  shared `FireClear` (N = 3 to fire, 4 to clear) and the same monitoring-gap handling, compares
+  with `>=`, and refuses a `request_rate` threshold. `from_config` takes the N's from `timing` and
+  the gate from `band`.
+- **Config.** `config/default.yaml` gains a `threshold` section: `factor: 1.5` (a placeholder
+  until step 18) and the two minimum deltas.
+- **Tuning.** `always_200/bench/tune.py`: `BAND_GRID` (36 points) and `THRESHOLD_GRID` (4) as
+  ruling P10 fixes them; `select` applies ruling P9 (highest detection at <= 0.5 FA per clean
+  hour, then lower FA, then grid order; with no feasible point the lowest-FA point, flagged
+  infeasible). `tune(session_dir, cfg, out_dir)` replays the session once per grid point through
+  `run_detector` and `score_session`, fits the thresholds on the low-load half of
+  `[scored_start, soak_end)`, prints both grids and the band's k sweep at the chosen floors, and
+  writes `band.yaml` and `threshold.yaml` (candidates, selection, feasibility, and the selected
+  thresholds). It refuses a session whose seed starts with B and never overwrites earlier output.
+- **CLI.** `python -m always_200 tune --session recordings/A1 --out runs/tune`; `make tune`
+  (`OUT=...` picks another output folder).
+- **Check.** `make test` (or `uv run pytest -q`): 292 tests pass, without Docker.

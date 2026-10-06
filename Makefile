@@ -1,4 +1,4 @@
-.PHONY: lint test record export bench-dev
+.PHONY: lint test record export bench-dev tune
 lint:
 	uv run ruff check . && uv run ruff format --check .
 test:
@@ -9,3 +9,5 @@ export:
 	uv run python -m always_200 export --seeds $(SEEDS) --run $(RUN) $(if $(filter 1,$(QUICK)),--quick,)
 bench-dev:
 	uv run python -m always_200 bench --recordings recordings/$(RUN) --detectors never,always
+tune:
+	uv run python -m always_200 tune --session recordings/A1 --out $(or $(OUT),runs/tune)

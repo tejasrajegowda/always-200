@@ -2,7 +2,9 @@
 
 - `record`: start a detached recording run (`always_200.bench.record`);
 - `export`: turn a finished run into recording files, or refuse (`always_200.bench.export`);
-- `bench`: replay recordings through detectors, score them and print the results table.
+- `bench`: replay recordings through detectors, score them and print the results table;
+- `tune`: score the band and threshold grids on session A and apply the selection rule
+  (`always_200.bench.tune`).
 """
 
 import argparse
@@ -90,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
     run_bench.add_argument("--recordings", type=Path, nargs="+", required=True)
     run_bench.add_argument("--detectors", type=_seeds, default=["never", "always"])
 
+    run_tune = commands.add_parser("tune", help="score the tuning grids on session A")
+    run_tune.add_argument("--session", type=Path, required=True, help="e.g. recordings/A1")
+    run_tune.add_argument("--out", type=Path, default=Path("runs/tune"))
+
     args = parser.parse_args(argv)
     if args.command == "record":
         from always_200.bench.record import start
@@ -101,6 +107,10 @@ def main(argv: list[str] | None = None) -> int:
 
         folders = export_run(args.seeds, args.out, PromAPI(args.prometheus), args.run, args.quick)
         print("Exported: " + ", ".join(str(f) for f in folders))
+    elif args.command == "tune":
+        from always_200.bench.tune import tune
+
+        tune(args.session, load_config(), args.out)
     else:
         sys.stdout.write(bench(args.recordings, args.detectors))
     return 0
