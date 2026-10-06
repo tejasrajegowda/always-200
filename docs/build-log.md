@@ -71,3 +71,28 @@ What was built, in order, and why.
   apps in-process (`httpx.ASGITransport`) on a fake clock and never wait for a fault delay.
 - **Decision.** [ADR 0002](decisions/0002-metrics-only-v1.md): v1 is metrics only.
 - **Check.** `make test` (or `uv run pytest -q`): 56 tests pass, without Docker.
+
+## Step 6: the seeded session schedule and the day curve
+
+Steps 4 (Postgres and Compose) and 5 (Prometheus and Grafana) are deferred; this step is pure code
+and needs neither.
+
+- **Schedule.** `traffic/schedule.py` turns a seed into a `SessionPlan`: 600 s warm-up, 3600 s
+  clean soak, then 48 slots (36 faults, 12 non-incident events), each followed by a 360 s
+  cool-down. One `random.Random("always-200:<seed>")` drives everything, so the same seed always
+  gives the same plan. Sizes and fault types are exact thirds (12 each) and event kinds exact
+  quarters (4 each of `traffic_spike`, `rolling_restart`, `deploy_only`), each shuffled
+  independently, and the fault/event order is shuffled too. A fault lasts 120–300 s and hits a
+  random service; with probability 0.5 it gets a deploy marker 30–120 s before it starts, which is
+  always after the previous slot's 90 s grace. An event lasts 120–240 s. A full session is about
+  8.6–9.0 h.
+- **Quick mode.** `build_session(seed, quick=True)`: 600 s warm-up, 300 s soak (or `soak_s`), then
+  three severe faults, one per service, in the order step, ramp, errors. For demos and smoke runs.
+- **Load.** `traffic/load.py`: `day_curve(t)` is a cosine "day" compressed into one hour, 30% of
+  peak at t = 0 and 100% at t = 30 min. `Load(seed).rate(t)` is `25 req/s × day_curve × (1 +
+  noise)`, where the noise is a straight line between seeded knots every 60 s, uniform in ±5%; a
+  traffic spike multiplies the rate by 2.5. Knots are drawn in order and kept, so a rate never
+  depends on which times were asked first.
+- **Consistency.** A test checks that the schedule's fault types and sizes are exactly the
+  patient's sick-switch menu.
+- **Check.** `make test` (or `uv run pytest -q`): 76 tests pass, without Docker.
