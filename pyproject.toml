@@ -1,0 +1,24 @@
+[project]
+name = "always-200"
+version = "0.1.0"
+description = "Keeps your app at 200, and tells you the moment it isn't: a measured, replayable anomaly-detection bench."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-m 'not docker'"
+markers = ["docker: needs the Compose stack or Docker (never runs in CI)"]

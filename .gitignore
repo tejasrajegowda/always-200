@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Generated files, never committed
+recordings/
+runs/
+dist/
+
+# Local-only and secrets
+.env
+.local/
+config/owners.yaml
+_trash/

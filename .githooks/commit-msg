@@ -1,0 +1,6 @@
+#!/bin/sh
+# commit-msg: plain python when it is on PATH, else the project's Python through uv
+if command -v python >/dev/null 2>&1; then
+    exec python scripts/guard.py message "$1"
+fi
+exec uv run python scripts/guard.py message "$1"
