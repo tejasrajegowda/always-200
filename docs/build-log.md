@@ -123,3 +123,24 @@ code and needs none of them.
   refused if the session never finished), `scrape_gaps` (holes over 30 s, Review Focus 1), and
   `write_key` / `read_key`.
 - **Check.** `make test` (or `uv run pytest -q`): 126 tests pass, without Docker.
+
+## Step 9: the incident builder and the culprit rule
+
+Pulled ahead of the detector and the scorer by ruling P8: the scorer counts per incident, so the
+builder must exist first. Pure code, no Docker.
+
+- **Incidents.** `always_200/incidents.py`: `IncidentBuilder(graph, close_after_s=180,
+  settle_s=60)` groups `Anomaly`s into `Incident`s. There is one open incident per kind, so a
+  `monitoring_gap` never mixes with a `fault` (ruling P2). An alert joins the open incident of its
+  kind, or opens a new one with id `<kind>-<int(opened_at)>`. An incident closes when
+  `now - last_alert_at >= 180 s`, and `closed_at` is `last_alert_at + 180` (r2 §4.3, ruling P1).
+- **Culprit.** `choose_culprit` takes the services that alerted within 60 s of the opening and
+  picks the most downstream one by `Graph.depth`, the earliest on a tie (D7). It is set on the
+  first tick at or after `opened_at + 60` and never changes afterwards.
+- **Events.** `feed` and `tick` return `IncidentEvent`s (`open`, `join`, `culprit`, `close`), so
+  ticket code (step 23) can react without the builder knowing about it. `join` fires only for a
+  `(service, signal)` pair new to the incident. In one tick the culprit event comes before the
+  close event. `finish(now)` settles any pending culprit at the end of a stream.
+- **Time.** Only alert timestamps and `tick(now)` move the clock; the wall clock is never read
+  (D5).
+- **Check.** `make test` (or `uv run pytest -q`): 145 tests pass, without Docker.
