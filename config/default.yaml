@@ -1,0 +1,30 @@
+# Shared configuration. Timing constants are fixed in advance and never tuned (scoring spec).
+# config/frozen.yaml, written after tuning on session A, overrides only the keys it sets.
+services: [storefront, orders, payments]
+graph:            # caller -> callees
+  storefront: [orders]
+  orders: [payments]
+  payments: []
+timing:
+  scrape_s: 5
+  step_s: 15
+  rate_window: 1m
+  n_fire: 3
+  n_clear: 4
+  grace_s: 90
+  warmup_s: 600
+  soak_s: 3600
+  cooldown_s: 360
+  incident_close_s: 180
+  settle_s: 60
+band:
+  k: 4.0
+  window: 20
+  latency_floor_frac: 0.10
+  latency_floor_abs_s: 0.005
+  latency_min_delta_s: 0.020
+  error_floor: 0.005
+  error_min_delta: 0.01
+  min_requests_1m: 30
+selection:
+  max_fa_per_clean_hour: 0.5

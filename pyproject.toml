@@ -5,7 +5,9 @@ description = "Keeps your app at 200, and tells you the moment it isn't: a measu
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0.3",
+]
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff"]
