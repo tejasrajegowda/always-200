@@ -172,3 +172,36 @@ Pure code, no Docker. One scorer grades every detector, exactly as the scoring s
   "chance" line; `to_json` gives the same numbers rounded to 4 dp for CI comparison. The
   detection ceiling, the sweep and the PromQL notes are added with those detectors (steps 16-19).
 - **Check.** `make test` (or `uv run pytest -q`): 185 tests pass, without Docker.
+
+## Step 11: record and export
+
+The code and its tests, against a fake Prometheus (`httpx.MockTransport`); no Docker. The live
+45-minute check runs once the Compose stack (steps 4, 5 and 7a) exists.
+
+- **Queries.** `always_200/sources/queries.py`: `QUERIES`, the PromQL of `up`, `request_rate`,
+  `latency_p95` and `error_ratio`, each grouped by `service`. The error ratio uses
+  `(5xx or all * 0) / all`, so a service with no 5xx series yet reads 0, not missing (Review
+  Focus 2). `up` expects the scrape config to give each patient target a `service` label.
+- **API client.** `always_200/sources/prom_api.py`: `PromAPI.query_range` (service -> step ->
+  value, NaN and infinity dropped, refuses more than 11,000 points per series before asking),
+  `raw` (the scraped points of `selector[Ns]`), `snapshot` (the admin API's TSDB snapshot), and
+  `align(t, step)`. A Prometheus `error` answer raises `PrometheusError`.
+- **Record.** `always_200/bench/record.py`: `start(seeds, run_name, quick)` refuses a run name
+  whose volume `always-200-prom-<RUN>` exists (ruling P12), then runs `docker compose --profile
+  traffic up -d --build` with `SEEDS`, `QUICK` and `RUN` as separate environment variables, and
+  prints the expected end in local time.
+- **Export.** `always_200/bench/export.py`: `export_run` needs the traffic container exited with
+  code 0; per seed it finds the latest contiguous `session_seed == 1` run, refuses any scrape gap
+  over 30 s on any `up` series or `session_phase` (`SessionHoled`), queries and assembles the
+  samples, derives the answer key, refuses any mismatch with `build_session` in fault count,
+  closed faults, `(type, size)` counts and event kinds (`SessionIncomplete`), turns
+  `deploy_marker_total` increments into markers, and writes `samples.jsonl.gz`,
+  `answer_key.jsonl`, `deploy_markers.jsonl` and `session.yaml` under `recordings/<seed>/`. Every
+  seed is checked before anything is written, and existing output is never overwritten. One TSDB
+  snapshot per run is copied to `recordings/<run>/tsdb/` with `docker compose cp`.
+- **CLI.** `always_200/__main__.py`: `record`, `export` and `bench` (replay -> `run_detector` ->
+  `score_session` -> `render_table`, for the `never` and `always` detectors).
+- **Makefile.** `record`, `export` (`QUICK=1` adds `--quick`) and `bench-dev`.
+- **Check.** `make test` (or `uv run pytest -q`): 220 tests pass, without Docker. An offline
+  version of the quick-recording check exports a fake 3-fault session and benches it: `never`
+  scores 0% with no false alarm, `always` scores 0% with 3 swallowed and 1 false alarm.
