@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "always-200 incident write-up",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "suspected_service", "evidence", "first_check"],
+  "properties": {
+    "summary": {"type": "string", "maxLength": 600},
+    "suspected_service": {"enum": ["storefront", "orders", "payments"]},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["service", "signal", "ts", "value"],
+        "properties": {
+          "service": {"enum": ["storefront", "orders", "payments"]},
+          "signal": {"enum": ["latency_p95", "error_ratio", "request_rate"]},
+          "ts": {"type": "number"},
+          "value": {"type": "number"}
+        }
+      }
+    },
+    "first_check": {"type": "string", "maxLength": 400}
+  }
+}

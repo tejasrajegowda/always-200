@@ -266,3 +266,43 @@ deferred.
 - **CLI.** `python -m always_200 tune --session recordings/A1 --out runs/tune`; `make tune`
   (`OUT=...` picks another output folder).
 - **Check.** `make test` (or `uv run pytest -q`): 292 tests pass, without Docker.
+
+## Step 20: the LLM write-up (code only, mocked)
+
+Pure code, no GPU and no network. Steps 17 to 19 are still deferred (they need Docker or the
+recorded sessions); nothing here depends on them. See
+[ADR 0005](decisions/0005-llm-writes-never-decides.md).
+
+- **Schema.** `always_200/writeup/schema.json` (draft 2020-12): `summary` (at most 600
+  characters), `suspected_service` (enum of the three services), `evidence` (1 to 10 rows of
+  service, signal, minute and value, no extra fields) and `first_check` (at most 400), all required,
+  no extra fields. Evidence `ts` is the relative minute (-2 for t-2) and `value` the number as
+  printed.
+- **Context (ruling P17).** `always_200/writeup/context.py`: `build_context` prints the graph, one
+  table of `request_rate`, `latency_p95` and `error_ratio` for all three services from t-10 to t+0
+  (the last sample of each minute; latency in whole ms, errors in % with one decimal, request rate
+  in req/s with one decimal; `-` for no sample), the minutes with `telemetry_missing`, the deploy
+  markers of the last 15 minutes as relative minutes, and the runbooks. It never names the culprit.
+  `Context.values` holds only the value-column numbers, parsed back from the printed text;
+  `Context.samples` holds the sample behind each printed cell. `load_runbooks` reads
+  `config/runbooks/<service>.md`.
+- **Client.** `always_200/writeup/llm.py`: `LLMClient` (text in, text out) and `OllamaClient`, one
+  `POST /api/chat` with `stream: false`, the schema as `format`, `options: {temperature: 0, seed:
+  42}`, a 60 s timeout and `think: false` only when asked. It raises httpx errors as they are and a
+  ValueError for a reply without `message.content`.
+- **Write-up.** `always_200/writeup/writeup.py`: `write` sends `prompt.md` followed by the context
+  text, parses and validates the reply, and falls back to the template on `timeout`,
+  `unreachable` (transport error or HTTP error status), `invalid_json` or `schema`. With no client
+  the template is used and `error` is None. The incident is never changed.
+- **Template.** `always_200/writeup/template.py`: the builder's culprit, the culprit's alerting
+  signal at its newest and oldest cell, printed with the table's own format, and evidence rows from
+  the context's cells (the alerts only when there are no cells). Schema-valid and grounded by
+  construction.
+- **Scores.** `always_200/writeup/scores.py`: `grounded` (every number in `summary` and
+  `first_check` within max(0.05, 1%) of a value-column number, compared as numbers) and
+  `culprit_agreement`. A number is a decimal that starts a token: digits glued after a letter
+  (`p95`) and minute labels (`t-10`, `t+0`) are not numbers; a unit glued after the digits
+  (`412ms`) still counts.
+- **Runbooks.** `config/runbooks/{storefront,orders,payments}.md`, five technical lines each.
+- **Dependency.** `jsonschema`.
+- **Check.** `make test` (or `uv run pytest -q`): 332 tests pass, with no network, Docker or GPU.
