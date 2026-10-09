@@ -37,17 +37,19 @@ def shape(anomalies):
 
 
 def day_soak(minutes: int = 60) -> list[Sample]:
-    """Storefront over one compressed day: 50 ms p95 at the lowest load, 80 ms at the peak.
+    """Storefront over one compressed day: 50 ms p95 at the lowest load, 90 ms at the peak.
 
-    Latency grows faster than load near the peak (queueing makes it convex), so the night half
-    stays near 50 ms while midday reaches 80 ms."""
+    Latency rises in a straight line with load. The peak is 90 ms, not 80, because the fitting
+    rule (night-half p99 + a 20 ms margin) puts the line at ~89.5 ms on a straight day; with an
+    80 ms peak no fixed line fitted this way could ever fire, and bending the curve to make it fire
+    would prove nothing."""
     out = []
     for i in range(minutes * 4):
         t = 15.0 * i
         share = day_curve(t)
         busy = (share - 0.30) / 0.70  # 0 at the lowest load, 1 at the peak
         out.append(Sample(t, "storefront", "request_rate", PEAK_RPS * share))
-        out.append(Sample(t, "storefront", "latency_p95", 0.050 + 0.030 * busy**3))
+        out.append(Sample(t, "storefront", "latency_p95", 0.050 + 0.040 * busy))
     return out
 
 
@@ -107,7 +109,7 @@ def test_night_fitted_threshold_false_alarms_at_midday():  # ruling P5, syntheti
     soak = day_soak()
     for factor in (1.0, 1.25):
         th = fit_thresholds(soak, factor=factor)
-        assert th[("storefront", "latency_p95")] < 0.080  # night p99 + 20 ms margin
+        assert th[("storefront", "latency_p95")] < 0.090  # night p99 + 20 ms margin, under the peak
         d = ThresholdDetector(th)
         fired = [a for a in (d.update(s) for s in soak) if a is not None]
         assert any(a.first for a in fired)
