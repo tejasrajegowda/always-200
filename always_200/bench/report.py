@@ -6,13 +6,18 @@ fault size and detection by fault type. The culprit rule is printed in the heade
 `to_json` gives the same numbers as a plain dict, rounded to 4 decimal places, so CI can compare
 two runs exactly.
 
+`ticket_lines` prints one time-to-ticket line per detector (step 23): the settle wait, the write-up
+and the sink, apart from detection latency (r2 §4.5).
+
 The detection ceiling, the 4-point sweep and the notes on the PromQL band are added by the steps
 that build those detectors and the tuning (steps 16, 17 and 19).
 """
 
 from dataclasses import asdict
+from statistics import median
 
 from always_200.bench.score import CI, SIGNAL_FOR_FAULT, SIZES, Summary
+from always_200.tickets.flow import TicketTiming
 
 CULPRIT_RULE = "culprit = most downstream service alerting in the first 60 s, earliest on ties"
 NA = "n/a"
@@ -95,6 +100,31 @@ def render_table(rows: dict[str, Summary]) -> str:
         [[name, *(_pct(s.by_type[t]) for t in SIGNAL_FOR_FAULT)] for name, s in rows.items()],
     )
     out += ["", f"{NA} = the denominator is 0 (nothing to measure)."]
+    return "\n".join(out) + "\n"
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def ticket_lines(times: dict[str, list[TicketTiming]]) -> str:
+    """Per detector: the median time to ticket of its fault tickets and the median of each part
+    (settle + write-up + sink). Monitoring-gap tickets are a separate stream, only counted."""
+    out = ["Time to ticket (settle + write-up + sink), apart from detection latency:"]
+    for name, timings in times.items():
+        faults = [t for t in timings if t.kind == "fault"]
+        gaps = len(timings) - len(faults)
+        if faults:
+            line = (
+                f"- {name}: median {median(t.total_s for t in faults):.1f} s "
+                f"(settle {median(t.settle_s for t in faults):.1f} s, "
+                f"write-up {median(t.writeup_s for t in faults):.3f} s, "
+                f"sink {median(t.sink_s for t in faults):.3f} s) "
+                f"over {_count(len(faults), 'ticket')}"
+            )
+        else:
+            line = f"- {name}: {NA} (no fault tickets)"
+        out.append(line + (f"; {_count(gaps, 'monitoring-gap ticket')}" if gaps else ""))
     return "\n".join(out) + "\n"
 
 

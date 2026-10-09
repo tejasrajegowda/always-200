@@ -4,10 +4,10 @@ Live watching, replay and the bench all go through `run_detector`, so a detector
 exactly the code that would page someone.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from always_200.core import Detector, Sample
-from always_200.incidents import Incident, IncidentBuilder
+from always_200.incidents import Incident, IncidentBuilder, IncidentEvent
 
 
 def run_detector(
@@ -15,15 +15,19 @@ def run_detector(
     detector: Detector,
     builder: IncidentBuilder,
     scored_start: float = float("-inf"),
+    on_events: Callable[[list[IncidentEvent]], None] | None = None,
 ) -> list[Incident]:
     """Ruling P1b: the detector sees every sample (warm-up included, so its band fills);
-    the incident builder sees only ticks and anomalies at or after scored_start."""
+    the incident builder sees only ticks and anomalies at or after scored_start.
+    `on_events` (the ticket flow, step 23) gets the builder's events after each sample."""
     last = None
     for s in samples:
         a = detector.update(s)
         if s.ts >= scored_start:
-            builder.tick(s.ts)
+            events = builder.tick(s.ts)
             if a is not None:
-                builder.feed(a)
+                events += builder.feed(a)
+            if on_events is not None and events:
+                on_events(events)
         last = s.ts
     return builder.finish(last if last is not None else 0.0)

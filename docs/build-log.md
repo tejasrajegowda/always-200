@@ -306,3 +306,37 @@ recorded sessions); nothing here depends on them. See
 - **Runbooks.** `config/runbooks/{storefront,orders,payments}.md`, five technical lines each.
 - **Dependency.** `jsonschema`.
 - **Check.** `make test` (or `uv run pytest -q`): 332 tests pass, with no network, Docker or GPU.
+
+## Step 23: ticket sinks and incident-state tickets
+
+Pure code, no network and no Docker. The `watch` command (step 15) is still deferred, so only
+`bench` files tickets for now. See [ADR 0006](decisions/0006-tickets-behind-an-interface.md).
+
+- **Interface.** `always_200/tickets/base.py`: `TicketSink` (`open(incident, writeup, assignee) ->
+  key`, `comment(key, incident, text)`, `resolve(key, incident)`), the shared ticket text (`title`,
+  e.g. "[always-200] payments: latency p95 high" or "[always-200] orders: monitoring gap";
+  `opening_body`; `comment_text`; `resolve_text`) and `SampleClock`, the time of the event being
+  handled in sample seconds.
+- **JSONL sink.** `always_200/tickets/jsonl.py`: `JsonlSink(path, clock, context)` appends one line
+  per action, `{action, incident, ts, culprit, assignee, title, body, writeup_source}` plus the
+  `context` fields, and never rewrites the file. The key is the incident id; a second `open` for
+  the same incident is refused.
+- **Flow.** `always_200/tickets/flow.py`: `TicketFlow(sink, writer, owners, clock, timer)`. On
+  `culprit` it opens the ticket (write-up from `writer`, assignee `owners(culprit)`), with every
+  alert that arrived before that moment in the body (ruling P14); a `join` after the ticket opened
+  becomes one comment; `close` resolves. A monitoring-gap incident opens a "monitoring gap" ticket
+  from the template's text and never calls the writer. `timings` holds the time to ticket per
+  ticket: settle (sample seconds), write-up seconds and sink seconds. `placeholder_owner` gives
+  `owner:<service>`.
+- **Config.** `config/default.yaml` gains `tickets: {sink: jsonl, path: runs/tickets.jsonl}`;
+  `always_200.tickets.sink_from` builds the named sink and refuses an unknown name (ruling P13).
+- **Pipeline.** `run_detector(..., on_events=...)` passes the builder's events after each sample.
+- **Template.** `gap_prose(service)` holds the monitoring-gap summary and first check, shared by
+  the template write-up and the gap ticket.
+- **CLI.** `python -m always_200 bench ... --tickets [PATH]` (default `runs/bench/tickets.jsonl`,
+  rewritten on each run, each line tagged with detector and session) runs the ticket flow with the
+  template writer and prints one time-to-ticket line per detector (`report.ticket_lines`), apart
+  from detection latency. The bench never builds a model client. `make bench-dev RUN=... TICKETS=1`.
+- **Check.** `make test` (or `uv run pytest -q`): 351 tests pass, with no network, Docker or GPU;
+  one of them replaces `socket.socket` with a function that fails and runs the bench with a model
+  named in the config.

@@ -33,6 +33,15 @@ def _row(s: Sample | Anomaly, t0: float) -> dict:
     }
 
 
+def gap_prose(service: str) -> tuple[str, str]:
+    """The summary and first check of a monitoring gap: the service could not be scraped."""
+    return (
+        f"Telemetry from {service} went missing: it could not be scraped.",
+        f"Check that {service} is running and that its metrics page answers, "
+        "then its most recent deploy and restarts.",
+    )
+
+
 def template_writeup(incident: Incident, context_samples: Sequence[Sample]) -> dict:
     t0 = incident.opened_at
     culprit = incident.culprit or incident.alerts[0].service
@@ -44,11 +53,7 @@ def template_writeup(incident: Incident, context_samples: Sequence[Sample]) -> d
     series = [s for s in cells if s.service == culprit and s.signal == focus]
 
     if incident.kind == "monitoring_gap" or focus is None:
-        summary = f"Telemetry from {culprit} went missing: it could not be scraped."
-        first_check = (
-            f"Check that {culprit} is running and that its metrics page answers, "
-            "then its most recent deploy and restarts."
-        )
+        summary, first_check = gap_prose(culprit)
     else:
         label = LABELS[focus]
         summary = f"{culprit} is the suspected source, alerting on its {label}."

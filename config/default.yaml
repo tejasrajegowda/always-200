@@ -32,3 +32,6 @@ threshold:        # ruling P5; the request gate and the N's are the band's and t
   error_min_delta: 0.01
 selection:
   max_fa_per_clean_hour: 0.5
+tickets:          # one ticket per incident (D14)
+  sink: jsonl     # the default: an append-only log, never the network (ruling P13)
+  path: runs/tickets.jsonl

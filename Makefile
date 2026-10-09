@@ -8,6 +8,6 @@ record:
 export:
 	uv run python -m always_200 export --seeds $(SEEDS) --run $(RUN) $(if $(filter 1,$(QUICK)),--quick,)
 bench-dev:
-	uv run python -m always_200 bench --recordings recordings/$(RUN) --detectors never,always
+	uv run python -m always_200 bench --recordings recordings/$(RUN) --detectors never,always $(if $(filter 1,$(TICKETS)),--tickets,)
 tune:
 	uv run python -m always_200 tune --session recordings/A1 --out $(or $(OUT),runs/tune)
