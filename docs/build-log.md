@@ -434,3 +434,35 @@ Built after the later pure-code steps. The shop from step 4 is unchanged; two co
   The seven containers used about 544 MiB. `docker compose --profile traffic down` kept the
   volumes. Grafana's first page load can say the Prometheus datasource is missing until its
   plugin finishes installing (about 30 s on a fresh volume); a reload then shows the lines.
+
+## Step 7b: the load-latency check
+
+No product code changed. The orders history read stays at 5 rows.
+
+- **Run.** `SEEDS=dev`, `QUICK=1`, `SOAK_MIN=60`, profile `traffic`. Warm-up is 600 s, then a
+  60-minute clean soak, then three severe faults. The traffic container exited 0. The session
+  clock is anchored on `session_phase`: 0 at 13:47:55 IST, 1 (soak) at 13:57:55 IST, 2 (slots)
+  at 14:57:55 IST. Those steps are 600 s and 3600 s apart, which is the plan. Prometheus is on
+  `127.0.0.1:9091`. The p95 query is the committed one,
+  `histogram_quantile(0.95, sum by (le, service) (rate(http_request_duration_seconds_bucket[1m])))`.
+- **Rule, written down before the result.** Storefront p95 at the day-curve peak (session
+  t = 30 min) must be at least 15% above the quiet point inside the soak (session t = 60 min).
+  The cosine peaks at session t = 30 min and is back to 30% of peak at t = 60 min. The plan's
+  labels, 10–15 min into the soak and t ≈ 40 min, sit on the climb and on the way down.
+- **Result.** At 14:17:55 IST (session t = 30 min) storefront p95 was 27.11 ms and the request
+  rate was 25.6 req/s. At 14:47:55 IST (session t = 60 min) p95 was 19.84 ms and the rate was
+  7.1 req/s. 27.11 is 36.7% above 19.84, so the bar is cleared. Both instants are inside the
+  clean soak (phase 1), before the three faults. The ±90 s neighbourhood agrees: the peak
+  minute stays between 26.5 and 28.9 ms, and the quiet minute sits near 19.9 ms.
+- **Plan clocks, recorded beside the decision.** 10, 12.5 and 15 min into the soak (session
+  t = 20, 22.5 and 25 min): storefront p95 43.95, 42.23 and 35.16 ms. Session t = 40 min:
+  24.64 ms. 40 min into the soak (session t = 50 min): 23.90 ms. Those later samples are lower
+  than the early-soak samples, so that pair does not show latency rising with load.
+- **Memory.** While the run was up, `docker stats` was about 517 MiB at launch, 536 MiB in
+  warm-up, and 571 MiB at the start of the soak. After traffic had exited, the six containers
+  still up used 631 MiB. All of these are under 2 GB.
+- **Shutdown.** `docker compose --profile traffic down` (no `-v`). Volumes kept. Other
+  projects' containers were not stopped.
+- **Check.** With `CUDA_VISIBLE_DEVICES=-1`: `uv run ruff check .` passed, `uv run ruff format
+  --check .` reported 102 files already formatted, and `uv run pytest -q` reported 365 passed,
+  1 deselected (the docker smoke).
