@@ -1,0 +1,104 @@
+{
+  "uid": "always-200",
+  "title": "always-200",
+  "tags": ["always-200"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {"from": "now-15m", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request rate",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 10}},
+        "overrides": []
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "sum by (service) (rate(http_requests_total[1m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "p95 latency",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "fieldConfig": {
+        "defaults": {"unit": "s", "custom": {"drawStyle": "line", "fillOpacity": 10}},
+        "overrides": []
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "histogram_quantile(0.95, sum by (le, service) (rate(http_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Error ratio",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {"drawStyle": "line", "fillOpacity": 10}
+        },
+        "overrides": []
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "(sum by (service) (rate(http_requests_total{code=~\"5..\"}[1m])) or sum by (service) (rate(http_requests_total[1m])) * 0) / sum by (service) (rate(http_requests_total[1m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "fault_active",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "custom": {"drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 0}
+        },
+        "overrides": []
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "expr": "max by (service) (fault_active)",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

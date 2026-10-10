@@ -357,3 +357,35 @@ Pure code, no network and no Docker. The `watch` command (step 15) is still defe
 - **Check.** `make test` (or `uv run pytest -q`): 351 tests pass, with no network, Docker or GPU;
   one of them replaces `socket.socket` with a function that fails and runs the bench with a model
   named in the config.
+
+## Step 5: Prometheus and Grafana
+
+Built after the later pure-code steps. The shop from step 4 is unchanged; two containers are added.
+
+- **Scrape.** `deploy/prometheus/prometheus.yml` on Prometheus 3.15.0. Scrape every 5 s, rule
+  evaluation every 15 s. Jobs `storefront`, `orders` and `payments` scrape `:8000` on the Compose
+  network, and each target gets a `service` label so the committed `up` query
+  (`max by (service) (up{service!=""})`) returns one series per service. A fourth job scrapes
+  Prometheus itself at `localhost:9090`. Retention is `storage.tsdb.retention.time: 400d` in this
+  file. The process log confirmed `TSDB retention updated duration=400d`. The deprecated
+  `--storage.tsdb.retention.time` flag is not set. `rule_files` points at `/etc/prometheus/rules/*.yml`;
+  3.15.0 starts when that glob matches nothing (the rule files arrive in later steps).
+- **Compose.** `prom/prometheus:v3.15.0` with `--web.enable-admin-api` (snapshots, step 11) and
+  volume `always-200-prom-${RUN:-live}` (ruling P12). `grafana/grafana:13.2.3` with anonymous
+  viewing. Provisioning and the dashboard JSON are mounted read-only. On this machine host 9090 and
+  3000 were already taken, so the published ports are `127.0.0.1:9091` and `127.0.0.1:3002`. Inside
+  the Compose network the ports stay 9090 and 3000. The export CLI still defaults to
+  `http://127.0.0.1:9090`; pass `--prometheus http://127.0.0.1:9091` on a machine that published 9091.
+- **Queries.** `always_200/sources/queries.py` keeps the PromQL step 11 committed. It gains
+  `ALLOWED_METRICS`, `BLOCKED_METRICS` and `metric_names`, so a detector expression cannot name an
+  answer-key gauge (D11). The error ratio still uses `(5xx or all * 0) / all`.
+- **Dashboard.** `deploy/grafana/dashboards/always-200.json`, four timeseries panels. Request rate,
+  p95 and error ratio copy `QUERIES` exactly. `fault_active` is `max by (service) (fault_active)`
+  drawn as a step, for humans only. The error-ratio axis is fixed at 0 to 1 (shown as 0% to 100%),
+  because idle minutes are 0/0 = NaN and Grafana's automatic axis then ran far past 100%.
+- **Check.** `make test`: 354 passed, 1 deselected (the docker smoke). By hand, with the stack up:
+  all four targets up; 300 buys, a severe latency step on payments for 120 s, 300 more buys. p95
+  rose on all three services (storefront about 20 ms to 36 ms, orders 15 ms to 29 ms, payments 5 ms
+  to 20 ms). Payments' `fault_active` went 0, then 1, then 0. Error ratio stayed 0. The same jump
+  was on the Grafana page. The six containers used about 571 MiB. `docker compose down` kept the
+  volumes.

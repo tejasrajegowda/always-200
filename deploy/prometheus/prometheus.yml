@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+storage:
+  tsdb:
+    retention:
+      time: 400d # set in the config, not by the deprecated command-line flag
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # `service` is attached here so `up{service!=""}` (the committed query) has one series
+  # per patient. The app's own metrics already carry `service`; `up` does not.
+  - job_name: storefront
+    static_configs:
+      - targets: ["storefront:8000"]
+        labels:
+          service: storefront
+  - job_name: orders
+    static_configs:
+      - targets: ["orders:8000"]
+        labels:
+          service: orders
+  - job_name: payments
+    static_configs:
+      - targets: ["payments:8000"]
+        labels:
+          service: payments
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
