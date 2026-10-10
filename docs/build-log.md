@@ -389,3 +389,48 @@ Built after the later pure-code steps. The shop from step 4 is unchanged; two co
   to 20 ms). Payments' `fault_active` went 0, then 1, then 0. Error ratio stayed 0. The same jump
   was on the Grafana page. The six containers used about 571 MiB. `docker compose down` kept the
   volumes.
+
+## Step 7a: the running traffic machine
+
+- **Runner.** `traffic/runner.py` turns a `SessionPlan` into timed actions and plays them.
+  `actions()` emits phase changes (0 warm-up, 1 soak, 2 slots, 3 done), one `fault` per fault,
+  a `deploy_marker` where the plan has one, and for each event an `event_start` / `event_end`.
+  A rolling restart adds three `restart` actions, storefront then orders then payments, 20 s
+  apart. A deploy-only event also emits a `deploy_marker` for a service chosen by
+  `random.Random("always-200-deploy-only:<seed>")`, a generator of its own so it cannot shift
+  the schedule. `run_session` sets `session_seed{seed}` to 1 for the session and back to 0,
+  and sets `session_phase` to 0 before the seed gauge flips.
+- **Open loop.** Arrivals use `random.Random("<seed>:arrivals")`. The next gap is
+  `expovariate(Load.rate(t, spike))`, added onto an absolute session clock, then the loop sleeps
+  until that instant. It never waits for the HTTP response. Each arrival counts
+  `traffic_offered_total` and sends `POST /buy` to storefront (`customer_id` 1..500,
+  `amount_cents` 100..20000, timeout 10 s) as its own task. Outcomes are `ok`, `error`,
+  `timeout` and `dropped`. A semaphore of 200 counts an arrival as `dropped` instead of waiting
+  when that many buys are already in flight. A traffic-spike event multiplies the rate by 2.5
+  for the instants it covers; the flag is read from the plan, not from a race with the action
+  task.
+- **Sick switches and events.** A fault is `POST <service>/admin/fault` with type, size and
+  duration. The service ends it (step 3). A restart is `POST /admin/restart`; a connection error
+  is ignored because the process may exit before the response. `event_active{kind}` is 1 between
+  the event's start and end, and all three kinds exist from import at 0.
+- **Process.** `traffic/__main__.py`: `run --seeds A1` or `--seeds B1,B2,B3` plays sessions back
+  to back and exits 0. `--quick` and `--soak-min` (minutes, converted to seconds) pass through
+  to `build_session`. With no arguments, `argv_from_env` builds that list from `SEEDS` (default
+  `dev`), `QUICK` (the flag only when the value is exactly `1`) and `SOAK_MIN` (only when
+  non-empty). Compose therefore never passes one flag string.
+- **Metrics.** `traffic/metrics.py` serves `:9100`: `event_active`, `deploy_marker_total`,
+  `session_phase`, `session_seed`, `traffic_offered_total`, `traffic_sent_total`.
+- **Compose.** The `traffic` service is on profile `traffic`, command `python -m traffic`,
+  depends on a healthy storefront, and publishes `127.0.0.1:9100`. It reuses the image
+  `always-200-patient`. Prometheus scrapes `traffic:9100`. `make down` passes `--profile traffic`,
+  because a plain `docker compose down` leaves a profiled container running.
+- **Check.** `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest -q`:
+  365 passed, 1 deselected (the docker smoke). By hand, `SEEDS=dev` and `QUICK=1` with
+  `docker compose --profile traffic up -d --build`: all five scrape targets up (Prometheus is
+  published on `127.0.0.1:9091`). After about two minutes the request-rate panel showed
+  storefront, orders and payments, each near 7.6 req/s (the night value of the day curve).
+  `traffic_offered_total` and `traffic_sent_total{outcome="ok"}` both reached 1120, with zero
+  errors, timeouts and drops. `session_phase` was 0 and `session_seed{seed="dev"}` was 1.
+  The seven containers used about 544 MiB. `docker compose --profile traffic down` kept the
+  volumes. Grafana's first page load can say the Prometheus datasource is missing until its
+  plugin finishes installing (about 30 s on a fresh volume); a reload then shows the lines.

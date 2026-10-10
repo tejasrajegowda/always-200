@@ -74,6 +74,19 @@ services:
     # Host 3000 is already taken. Inside the container Grafana still listens on 3000.
     ports: ["127.0.0.1:3002:3000"]
 
+  traffic:
+    build: .
+    image: always-200-patient
+    profiles: ["traffic"]
+    # No flag string: Compose would hand "--quick --soak-min 60" over as one argument.
+    command: ["python", "-m", "traffic"]
+    environment:
+      SEEDS: "${SEEDS:-dev}"
+      QUICK: "${QUICK:-0}" # "1" only for quick runs; a full run never gets --quick
+      SOAK_MIN: "${SOAK_MIN:-}"
+    depends_on: {storefront: {condition: service_healthy}}
+    ports: ["127.0.0.1:9100:9100"]
+
 volumes:
   pg-data: {}
   prom-data: {name: "always-200-prom-${RUN:-live}"}

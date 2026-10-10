@@ -13,7 +13,8 @@ tune:
 	uv run python -m always_200 tune --session recordings/A1 --out $(or $(OUT),runs/tune)
 up:
 	docker compose up -d --build
+# The profile is required on the way down: without it, a traffic container is left running.
 down:
-	docker compose down
+	docker compose --profile traffic down
 smoke:
 	uv run pytest -m docker -q tests/patient/test_compose_smoke.py
