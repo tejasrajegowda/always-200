@@ -34,3 +34,8 @@ scrape_configs:
   - job_name: traffic
     static_configs:
       - targets: ["traffic:9100"]
+  # The watcher's own /metrics. No `service` label: the detector's `up` query ignores it,
+  # and Always200Down matches this job by name.
+  - job_name: always-200
+    static_configs:
+      - targets: ["always-200:9200"]

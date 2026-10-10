@@ -43,6 +43,23 @@ def test_query_range_parses_matrix_and_drops_nan():
     )
 
 
+def test_a_blocked_metric_name_in_a_range_result_is_dropped():
+    api = api_answering(
+        matrix(
+            {"metric": {"service": "orders"}, "values": [[15, "0.02"]]},
+            {
+                "metric": {"__name__": "fault_active", "service": "orders"},
+                "values": [[15, "12345"]],
+            },
+            {
+                "metric": {"__name__": "event_active", "service": "storefront"},
+                "values": [[15, "1"]],
+            },
+        )
+    )
+    assert api.query_range("latency", 15.0, 15.0) == {"orders": {15.0: 0.02}}
+
+
 def test_query_range_keeps_a_real_zero():
     api = api_answering(matrix({"metric": {"service": "orders"}, "values": [[15, "0"]]}))
     assert api.query_range("x", 15.0, 15.0) == {"orders": {15.0: 0.0}}

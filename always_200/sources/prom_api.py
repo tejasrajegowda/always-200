@@ -21,6 +21,8 @@ import math
 
 import httpx
 
+from always_200.sources.queries import ALLOWED_METRICS
+
 MAX_POINTS = 11_000
 
 Labels = dict[str, str]
@@ -63,7 +65,8 @@ class PromAPI:
     def query_range(
         self, expr: str, start: float, end: float, step: float = 15.0
     ) -> dict[str, dict[float, float]]:
-        """service -> ts -> value; drops NaN; raises on Prometheus 'error' status."""
+        """service -> ts -> value; drops NaN and any series whose `__name__` is outside the
+        allow-list; raises on Prometheus 'error' status."""
         points = math.floor((end - start) / step) + 1
         if points > MAX_POINTS:
             raise ValueError(
@@ -77,9 +80,17 @@ class PromAPI:
             raise PrometheusError(f"expected a matrix, got {data.get('resultType')!r}")
         out: dict[str, dict[float, float]] = {}
         for series in data["result"]:
-            service = series["metric"].get("service")
+            metric = series["metric"]
+            # `by (service)` drops __name__. A series that still names a metric is raw, and only
+            # the allow-list may pass (D11). Dropping it here, before the one-series-per-service
+            # check, is what stops a planted answer-key series from replacing the real value.
+            # `raw()` is unchanged, so the answer key can still read those gauges.
+            name = metric.get("__name__")
+            if name is not None and name not in ALLOWED_METRICS:
+                continue
+            service = metric.get("service")
             if service is None:
-                raise PrometheusError(f"a result series has no service label: {series['metric']}")
+                raise PrometheusError(f"a result series has no service label: {metric}")
             if service in out:
                 raise PrometheusError(f"two result series for service {service!r}")
             values = ((float(ts), float(v)) for ts, v in series["values"])

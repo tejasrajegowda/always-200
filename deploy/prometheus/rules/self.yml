@@ -1,0 +1,8 @@
+# Who watches the watcher. Prometheus shows this on its own Alerts page.
+# Nothing routes it further: v1 has no Alertmanager (ADR 0004).
+groups:
+  - name: self
+    rules:
+      - alert: Always200Down
+        expr: up{job="always-200"} == 0
+        for: 1m

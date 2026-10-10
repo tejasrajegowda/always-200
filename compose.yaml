@@ -23,7 +23,7 @@ services:
     environment: {SERVICE: payments, DATABASE_URL: "postgresql://shop:shop-local-only@postgres/shop"}
     depends_on: {postgres: {condition: service_healthy}}
     healthcheck: *http-health
-    restart: unless-stopped
+    restart: "no"  # dev stack: never auto-start when the engine starts; steps bring it up and stop it
     ports: ["127.0.0.1:8003:8000"]
 
   orders:
@@ -38,7 +38,7 @@ services:
       }
     depends_on: {postgres: {condition: service_healthy}, payments: {condition: service_healthy}}
     healthcheck: *http-health
-    restart: unless-stopped
+    restart: "no"  # dev stack: never auto-start when the engine starts; steps bring it up and stop it
     ports: ["127.0.0.1:8002:8000"]
 
   storefront:
@@ -48,7 +48,7 @@ services:
     environment: {SERVICE: storefront, DOWNSTREAM_URL: "http://orders:8000"}
     depends_on: {orders: {condition: service_healthy}}
     healthcheck: *http-health
-    restart: unless-stopped
+    restart: "no"  # dev stack: never auto-start when the engine starts; steps bring it up and stop it
     ports: ["127.0.0.1:8001:8000"]
 
   prometheus:
@@ -86,6 +86,20 @@ services:
       SOAK_MIN: "${SOAK_MIN:-}"
     depends_on: {storefront: {condition: service_healthy}}
     ports: ["127.0.0.1:9100:9100"]
+
+  always-200:
+    build: .
+    image: always-200-patient
+    profiles: ["watch"]
+    # Inside the Compose network Prometheus is still on 9090. The host publish is 9091.
+    command: ["python", "-m", "always_200", "watch", "--prometheus", "http://prometheus:9090"]
+    ports: ["127.0.0.1:9200:9200"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    env_file: [{path: .env, required: false}]
+    depends_on:
+      prometheus: {condition: service_started}
+      storefront: {condition: service_healthy}
+    restart: "no"  # dev stack: never auto-start when the engine starts; steps bring it up and stop it
 
 volumes:
   pg-data: {}

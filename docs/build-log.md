@@ -466,3 +466,29 @@ No product code changed. The orders history read stays at 5 rows.
 - **Check.** With `CUDA_VISIBLE_DEVICES=-1`: `uv run ruff check .` passed, `uv run ruff format
   --check .` reported 102 files already formatted, and `uv run pytest -q` reported 365 passed,
   1 deselected (the docker smoke).
+
+## Step 15: the live Prometheus source, the allow-list and watch
+
+- **Live source.** `always_200/sources/prometheus.py`: `PrometheusSource` waits until a 15 s step
+  has had 10 s to be scraped, queries the four committed expressions for that one step, and yields
+  `assemble(...)`. `Sample.ts` is Prometheus's step timestamp. A failed HTTP call retries the same
+  step. A bad query is raised.
+- **Allow-list.** `query_range` drops a series whose `__name__` is outside
+  `http_requests_total`, `http_request_duration_seconds_bucket` and `up`, before a planted
+  `fault_active` series can become a sample. `raw()` still returns those gauges for the answer key.
+- **Watch.** `python -m always_200 watch` serves `/metrics` on port 9200, then runs
+  `PrometheusSource` → `BandDetector` → `IncidentBuilder` and prints each incident event as one
+  JSON line. Sinks are not wired here.
+- **Who watches the watcher.** Compose service `always-200` (profile `watch`) is scraped as job
+  `always-200`. `deploy/prometheus/rules/self.yml` holds `Always200Down: up{job="always-200"} == 0`
+  for 1 minute. No Alertmanager (ADR 0004). `make down` now passes the traffic and watch profiles.
+- **Live check, quick session, seed dev, 11 Oct 2026.** Traffic ran 01:18:20–01:59:18 IST and
+  exited 0. Lag stayed at 10.01–10.05 s. The orders latency fault opened at 01:41:45 and named
+  orders as the culprit at 01:42:45. The storefront error fault opened at 01:50:45 (error ratio
+  0.347) and named storefront at 01:51:45. The payments latency fault did not open an incident:
+  p95 moved from 4.8 ms to 19.9 ms, under the 20 ms minimum delta and under the band edge. Stopping
+  the watcher made `Always200Down` pending at 02:09:02 IST and firing at 02:10:02. Starting it
+  again cleared the rule by 02:10:25.
+- **Check.** With `CUDA_VISIBLE_DEVICES=-1`: `uv run ruff check .` passed, `uv run ruff format
+  --check .` reported 107 files already formatted, and `uv run pytest -q` reported 375 passed,
+  1 deselected (the docker smoke).

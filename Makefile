@@ -1,4 +1,4 @@
-.PHONY: lint test record export bench-dev tune up down smoke
+.PHONY: lint test record export bench-dev tune up down smoke watch
 lint:
 	uv run ruff check . && uv run ruff format --check .
 test:
@@ -13,8 +13,10 @@ tune:
 	uv run python -m always_200 tune --session recordings/A1 --out $(or $(OUT),runs/tune)
 up:
 	docker compose up -d --build
-# The profile is required on the way down: without it, a traffic container is left running.
+# Both profiles are required on the way down: without them, traffic or watch stays running.
 down:
-	docker compose --profile traffic down
+	docker compose --profile traffic --profile watch down
+watch:
+	docker compose --profile watch up -d --build
 smoke:
 	uv run pytest -m docker -q tests/patient/test_compose_smoke.py

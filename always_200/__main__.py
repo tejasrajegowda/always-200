@@ -5,10 +5,12 @@
 - `bench`: replay recordings through detectors, score them and print the results table; with
   `--tickets`, also file one ticket per incident to a JSONL log and print the time to ticket;
 - `tune`: score the band and threshold grids on session A and apply the selection rule
-  (`always_200.bench.tune`).
+  (`always_200.bench.tune`);
+- `watch`: read live Prometheus, print one JSON line per incident event, and serve `/metrics`.
 """
 
 import argparse
+import json
 import sys
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
@@ -19,12 +21,13 @@ from always_200.bench.files import read_jsonl
 from always_200.bench.report import render_table, ticket_lines
 from always_200.bench.score import score_session, summarise
 from always_200.config import REPO_ROOT, graph_from, load_config
-from always_200.core import Detector, Sample
+from always_200.core import ANOMALY_KINDS, Detector, Sample
 from always_200.detect.band import BandConfig, BandDetector
 from always_200.detect.trivial import AlwaysDetector, NeverDetector
 from always_200.graph import Graph
-from always_200.incidents import Incident, IncidentBuilder
+from always_200.incidents import Incident, IncidentBuilder, IncidentEvent
 from always_200.pipeline import run_detector
+from always_200.selfmetrics import SelfMetrics
 from always_200.sources.replay import ReplaySource
 from always_200.tickets.base import SampleClock
 from always_200.tickets.flow import TicketFlow, TicketTiming, placeholder_owner
@@ -137,6 +140,76 @@ def bench(recordings: list[Path], detectors: list[str], tickets: Path | None = N
     return f"{render_table(rows)}\n{ticket_lines(times)}Tickets written to {tickets}\n"
 
 
+def event_payload(event: IncidentEvent) -> dict:
+    """One incident event as a JSON object. The incident's alert list is not copied in."""
+    incident = event.incident
+    payload: dict = {
+        "type": event.type,
+        "ts": event.ts,
+        "id": incident.id,
+        "kind": incident.kind,
+        "opened_at": incident.opened_at,
+        "culprit": incident.culprit,
+        "closed_at": incident.closed_at,
+    }
+    if event.alert is not None:
+        alert = event.alert
+        payload["alert"] = {
+            "service": alert.service,
+            "signal": alert.signal,
+            "value": alert.value,
+            "first": alert.first,
+        }
+    return payload
+
+
+def _refresh_gauges(metrics: SelfMetrics, builder: IncidentBuilder) -> None:
+    """`alerts_open` counts pairs still inside an open incident; `incidents_open` is 0 or 1."""
+    open_incidents = [inc for inc in builder.incidents if inc.closed_at is None]
+    pairs = {(alert.service, alert.signal) for inc in open_incidents for alert in inc.alerts}
+    metrics.alerts_open.set(len(pairs))
+    for kind in ANOMALY_KINDS:
+        metrics.incidents_open.labels(kind=kind).set(
+            sum(inc.kind == kind for inc in open_incidents)
+        )
+
+
+def watch(prometheus_url: str, metrics_port: int = 9200) -> None:
+    """PrometheusSource, then the band, then the incident builder. One JSON line per event.
+
+    Sinks are not wired here. The metrics server starts before the first query, so a slow
+    Prometheus does not look like a dead watcher.
+    """
+    from always_200.sources.prom_api import PromAPI
+    from always_200.sources.prometheus import PrometheusSource
+
+    cfg = load_config()
+    timing = cfg["timing"]
+    graph = graph_from(cfg)
+    metrics = SelfMetrics()
+    metrics.serve(metrics_port)
+    builder = IncidentBuilder(
+        graph, close_after_s=timing["incident_close_s"], settle_s=timing["settle_s"]
+    )
+    _refresh_gauges(metrics, builder)
+    source = PrometheusSource(
+        PromAPI(prometheus_url), step_s=float(timing["step_s"]), metrics=metrics
+    )
+
+    def on_events(events: list[IncidentEvent]) -> None:
+        _refresh_gauges(metrics, builder)
+        for event in events:
+            sys.stdout.write(json.dumps(event_payload(event)) + "\n")
+            sys.stdout.flush()
+
+    run_detector(
+        source.samples(),
+        BandDetector(BandConfig.from_config(cfg)),
+        builder,
+        on_events=on_events,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="always_200")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -165,6 +238,10 @@ def main(argv: list[str] | None = None) -> int:
     run_tune.add_argument("--session", type=Path, required=True, help="e.g. recordings/A1")
     run_tune.add_argument("--out", type=Path, default=Path("runs/tune"))
 
+    run_watch = commands.add_parser("watch", help="watch live Prometheus and print incident events")
+    run_watch.add_argument("--prometheus", default="http://127.0.0.1:9090")
+    run_watch.add_argument("--metrics-port", type=int, default=9200)
+
     args = parser.parse_args(argv)
     if args.command == "record":
         from always_200.bench.record import start
@@ -180,6 +257,8 @@ def main(argv: list[str] | None = None) -> int:
         from always_200.bench.tune import tune
 
         tune(args.session, load_config(), args.out)
+    elif args.command == "watch":
+        watch(args.prometheus, args.metrics_port)
     else:
         sys.stdout.write(bench(args.recordings, args.detectors, args.tickets))
     return 0
