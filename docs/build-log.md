@@ -72,10 +72,27 @@ What was built, in order, and why.
 - **Decision.** [ADR 0002](decisions/0002-metrics-only-v1.md): v1 is metrics only.
 - **Check.** `make test` (or `uv run pytest -q`): 56 tests pass, without Docker.
 
+## Step 4: Postgres and three services in Compose
+
+- **Storage.** `patient/schema.sql` creates `orders` and `payments`. `payments.order_id` is
+  nullable, because a payment can be recorded with no order (the in-process store from step 3
+  already allowed that). `patient/store.py` adds `PgStore`: an async pool of 1 to 5 connections,
+  opened in the app lifespan and not in the constructor. SQL uses `%s` placeholders. Leaving the
+  connection's context commits; an error rolls back.
+- **Process.** `patient/main.py` reads `SERVICE`, `DATABASE_URL` (orders and payments only) and
+  `DOWNSTREAM_URL` (storefront calls orders, orders calls payments) and builds `app`. One uvicorn
+  worker, so metrics stay in one process.
+- **Image and Compose.** One `Dockerfile` (uv pinned to 0.12.7, the version reported at build
+  time). `compose.yaml` project `always-200`: Postgres 17 with no host port, then payments
+  `127.0.0.1:8003`, orders `127.0.0.1:8002`, storefront `127.0.0.1:8001`. Each app exposes
+  `/healthz`, and each `depends_on` between apps waits until that check passes. `make down` does
+  not delete the volume.
+- **Check.** `make test`: 351 passed, the docker smoke test deselected. `make smoke`: 1 passed
+  (11 orders, 12 payments, one of them with no order). The four containers used about 234 MiB.
+
 ## Step 6: the seeded session schedule and the day curve
 
-Steps 4 (Postgres and Compose) and 5 (Prometheus and Grafana) are deferred; this step is pure code
-and needs neither.
+Step 5 (Prometheus and Grafana) is deferred; this step is pure code and needs neither.
 
 - **Schedule.** `traffic/schedule.py` turns a seed into a `SessionPlan`: 600 s warm-up, 3600 s
   clean soak, then 48 slots (36 faults, 12 non-incident events), each followed by a 360 s

@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from patient.fault import SIZES, TYPES, Fault
 from patient.metrics import PatientMetrics
 from patient.recent import RecentLatency
-from patient.store import Store
+from patient.store import PgStore, Store
 
 ROUTES = {"storefront": "/buy", "orders": "/orders", "payments": "/payments"}
 CALLS = {"storefront": "orders", "orders": "payments"}  # caller -> callee, as in the config graph
@@ -119,6 +119,8 @@ def create_app(
                 await asyncio.sleep(1)  # always the real sleep: a fake one would spin this loop
                 switch.refresh()
 
+        if isinstance(store, PgStore):
+            await store.open()
         task = asyncio.create_task(tick())
         try:
             yield
@@ -126,6 +128,10 @@ def create_app(
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
+            if isinstance(store, PgStore):
+                await store.close()
+            if downstream is not None:
+                await downstream.aclose()
 
     app = FastAPI(title=f"patient: {service}", lifespan=lifespan)
     app.state.metrics = metrics

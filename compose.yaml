@@ -1,0 +1,55 @@
+# The database password is a local-only demo value. Postgres publishes no host
+# port, so it is reachable only on this Compose network.
+name: always-200
+
+x-http-health: &http-health # each app answers GET /healthz once it is really listening
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
+  interval: 5s
+  retries: 20
+
+services:
+  postgres:
+    image: postgres:17
+    environment: {POSTGRES_USER: shop, POSTGRES_PASSWORD: shop-local-only, POSTGRES_DB: shop}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./patient/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U shop"], interval: 5s, retries: 20}
+
+  payments:
+    build: .
+    image: always-200-patient
+    command: ["uvicorn", "patient.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment: {SERVICE: payments, DATABASE_URL: "postgresql://shop:shop-local-only@postgres/shop"}
+    depends_on: {postgres: {condition: service_healthy}}
+    healthcheck: *http-health
+    restart: unless-stopped
+    ports: ["127.0.0.1:8003:8000"]
+
+  orders:
+    build: .
+    image: always-200-patient
+    command: ["uvicorn", "patient.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment:
+      {
+        SERVICE: orders,
+        DATABASE_URL: "postgresql://shop:shop-local-only@postgres/shop",
+        DOWNSTREAM_URL: "http://payments:8000",
+      }
+    depends_on: {postgres: {condition: service_healthy}, payments: {condition: service_healthy}}
+    healthcheck: *http-health
+    restart: unless-stopped
+    ports: ["127.0.0.1:8002:8000"]
+
+  storefront:
+    build: .
+    image: always-200-patient
+    command: ["uvicorn", "patient.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment: {SERVICE: storefront, DOWNSTREAM_URL: "http://orders:8000"}
+    depends_on: {orders: {condition: service_healthy}}
+    healthcheck: *http-health
+    restart: unless-stopped
+    ports: ["127.0.0.1:8001:8000"]
+
+volumes:
+  pg-data: {}
